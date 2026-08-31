@@ -112,6 +112,59 @@ Apply to companies with international mobility:
 * PayPal
 * Visa
 * Mastercard
+* Coupa
+Energy Exemplar
+HealthEdge
+Netsmart
+Applied Systems
+Streamline Healthcare Solutions
+ExxonMobil
+AkzoNobel
+ABB
+Hitachi Energy
+Simplify3x
+Wolken Software
+Welldoc
+Acviss Technologies
+nVipani
+Epsilon
+Safran
+Medinous
+Eurofins
+Tieto
+Quest Global
+Persistent Systems
+
+    SAP Labs
+    Siemens
+    Bosch
+    Mercedes-Benz R&D
+    BMW Group
+    Volkswagen Group
+    Continental
+    ZF
+    Schaeffler
+    Daimler Truck
+    Bayer
+    Allianz
+    Deutsche Bank
+    Deutsche Telekom
+    Lufthansa
+    Henkel
+    BASF
+    Infineon
+    Fresenius
+    TÜV SÜD
+    TÜV Rheinland
+    Körber
+    Nagarro
+    Siemens Healthineers
+    Miele
+    Heidelberg Materials
+    Delivery Hero
+    HelloFresh
+    Zalando
+
 
 Especially look for:
 
