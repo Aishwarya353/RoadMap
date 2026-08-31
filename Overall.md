@@ -4,7 +4,7 @@ I'd build it in layers.
 
 And one important thing: **don't try to learn everything simultaneously.** Your biggest improvement will come from learning in the right dependency order.
 
-# 🚀 Your Roadmap
+# Roadmap
 
 Think of the whole journey like this:
 
