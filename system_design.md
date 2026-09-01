@@ -1,7 +1,3 @@
-Yes bro 😄 — if you mean **pure System Design**, then forget OOP, SOLID, testing, Git, etc.
-
-For a **4-year Full Stack Developer**, these are the **25 System Design topics** I would prepare deeply:
-
 ### 🔥 25 Pure System Design Topics
 
 | #      | Topic                          | What to Know                                                           |
@@ -135,3 +131,32 @@ Redis Cache
 ```
 
 That is the **pure System Design preparation path** I'd recommend for a 4-year Full Stack interview.
+
+
+Your Scalability checklist should be:
+
+Core Scalability
+✅ What is Scalability?
+✅ Vertical Scaling
+✅ Horizontal Scaling
+✅ Vertical vs Horizontal
+Elasticity
+Auto Scaling
+Stateless vs Stateful applications
+Bottleneck identification
+Scale-up / Scale-out
+High Availability vs Scalability
+Distributed concepts connected to scalability
+✅ Distributed Systems
+✅ Inter-Process Communication
+✅ RPC
+Network latency
+Data consistency
+Session management in horizontally scaled systems
+Architecture concepts
+Load Balancing ← our next major topic
+Database scaling
+Caching
+Read replicas
+Database sharding
+CDN
