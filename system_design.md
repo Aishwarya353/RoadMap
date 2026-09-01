@@ -160,3 +160,90 @@ Caching
 Read replicas
 Database sharding
 CDN
+
+
+
+PHASE 1 — FOUNDATIONS
+        ↓
+1. System Design Fundamentals
+2. Scalability
+3. Vertical vs Horizontal Scaling
+4. Stateless vs Stateful
+5. Distributed Systems
+6. IPC & RPC
+7. Network Basics & Latency
+
+        ↓
+PHASE 2 — TRAFFIC MANAGEMENT
+        ↓
+8. Load Balancers
+9. Reverse Proxy
+10. API Gateway
+11. Rate Limiting
+
+        ↓
+PHASE 3 — DATA
+        ↓
+12. Database Design
+13. Database Indexing
+14. Database Transactions
+15. Database Replication
+16. Database Partitioning
+17. Sharding
+18. SQL vs NoSQL
+
+        ↓
+PHASE 4 — PERFORMANCE
+        ↓
+19. Caching
+20. CDN
+21. Database Caching / Read Replicas
+
+        ↓
+PHASE 5 — DISTRIBUTED COMMUNICATION
+        ↓
+22. Message Queues
+23. Pub/Sub
+24. Event-Driven Architecture
+25. Kafka / RabbitMQ / Service Bus
+
+        ↓
+PHASE 6 — RELIABILITY
+        ↓
+26. Timeout
+27. Retry
+28. Circuit Breaker
+29. Idempotency
+30. Fault Tolerance
+31. High Availability
+32. Disaster Recovery
+
+        ↓
+PHASE 7 — DISTRIBUTED DATA
+        ↓
+33. CAP Theorem
+34. Consistency Models
+35. Distributed Transactions
+36. Saga Pattern
+37. Eventual Consistency
+
+        ↓
+PHASE 8 — SECURITY & OBSERVABILITY
+        ↓
+38. Authentication & Authorization
+39. Secrets / Key Management
+40. Logging
+41. Metrics
+42. Distributed Tracing
+
+        ↓
+PHASE 9 — COMPLETE SYSTEM DESIGN
+        ↓
+43. URL Shortener
+44. Rate Limiter
+45. File Storage
+46. Notification System
+47. Chat System
+48. E-Commerce / Order System
+49. Payment System
+50. Complete High-Scale System
