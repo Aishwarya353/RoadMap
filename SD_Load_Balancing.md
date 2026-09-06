@@ -1156,6 +1156,296 @@ And this will connect directly to your earlier question:
 
 > **"If the same user goes to different servers, how does the application remember them?"**
 
+----
+
+Ahhh yes bro — now I understand exactly what you're asking. 🔥
+
+You're asking:
+
+If /health fails → Azure removes the instance. But if a normal request like /api/employees fails with 500/503, does Azure automatically say "API2 is bad" and stop sending traffic to API2?
+
+Short answer: Normally, NO.
+
+A normal request failure is not automatically treated as a health-check failure.
+
+That's a very important distinction.
+
+Think of these as two separate channels
+                    Load Balancer
+                         |
+             +-----------+-----------+
+             |                       |
+       Health Check              User Traffic
+             |                       |
+             ↓                       ↓
+        /health                 /api/orders
+             |                       |
+             ↓                       ↓
+          API2                    API2
+
+Health check
+GET /health
+       ↓
+    503 ❌
+       ↓
+Infrastructure says:
+"API2 is unhealthy"
+       ↓
+Remove API2
+
+Normal request
+GET /api/orders
+       ↓
+    503 ❌
+       ↓
+Response returned to user
+       ↓
+API2 is NOT necessarily removed
+
+
+The load balancer generally doesn't say:
+
+"One request failed, therefore API2 is dead."
+
+Because a request can fail for many reasons that have nothing to do with the instance being unhealthy.
+
+Why wouldn't it remove API2?
+
+Imagine:
+
+API1 🟢
+API2 🟢
+API3 🟢
+
+
+User sends:
+
+GET /api/employees/999999
+
+
+API2 returns:
+
+404 Not Found
+
+
+Should we remove API2?
+
+Obviously not. 😄
+
+The request failed, but:
+
+API2 = perfectly healthy
+
+
+Or:
+
+POST /api/orders
+
+
+returns:
+
+400 Bad Request
+
+
+Again:
+
+API2 = healthy
+
+
+Even:
+
+GET /api/employees
+
+
+might return:
+
+500 Internal Server Error
+
+
+because of a specific application bug/data problem, while other requests work perfectly.
+
+So the load balancer cannot simply do:
+
+Request failed
+     ↓
+Remove instance ❌
+
+But what if API2 is REALLY broken?
+
+This is where health checks come back into the picture.
+
+Suppose API2 has a serious problem:
+
+API2
+ |
+ +-- ASP.NET Core process 🟢
+ +-- SQL connection 🔴
+ +-- Most API requests failing 🔴
+
+
+Requests start failing:
+
+Request 1 → API2 → 503
+Request 2 → API2 → 503
+Request 3 → API2 → 503
+Request 4 → API2 → 503
+
+
+But the load balancer doesn't necessarily remove it just because those requests failed.
+
+Eventually:
+
+Health Check
+     ↓
+API2 /health/ready
+     ↓
+503 ❌
+     ↓
+API2 marked unhealthy
+     ↓
+Stop sending NEW traffic
+
+
+So the mechanism is:
+
+              Actual Requests
+                    |
+              failures happen
+                    |
+                    v
+              Application
+                    |
+                    | dependency broken
+                    v
+              Health Check
+                    |
+                    v
+                  FAIL
+                    |
+                    v
+             Load Balancer
+                    |
+                    v
+             Remove instance
+
+Here's the key distinction
+Request failure
+/api/orders → 500
+
+
+means:
+
+"This particular request failed."
+
+It does not necessarily mean:
+
+"This server is broken."
+
+Health failure
+/health → 503
+
+
+means:
+
+"This instance should probably not receive traffic."
+
+That's the signal the infrastructure uses for instance-level traffic removal.
+
+What about 100% of requests failing?
+
+Suppose:
+
+API2
+
+Request 1 → 500
+Request 2 → 500
+Request 3 → 500
+Request 4 → 500
+Request 5 → 500
+
+
+Even then, don't assume the load balancer automatically removes API2 based on those responses.
+
+Instead, you design your health/readiness signal so that the underlying problem eventually causes:
+
+/health/ready → 503
+
+
+Then:
+
+API2
+  ↓
+Health check fails
+  ↓
+Load balancer detects unhealthy
+  ↓
+Remove API2 from rotation
+
+One subtle thing: "stop traffic" doesn't mean kill existing connections
+
+Suppose:
+
+API1 🟢
+API2 🔴
+API3 🟢
+
+
+API2 is removed from the load-balancing pool.
+
+That generally means:
+
+NEW requests
+     ↓
+API1 or API3
+
+
+It doesn't necessarily mean:
+
+Existing request already connected to API2
+                    ↓
+                  MAGICALLY
+                  MOVED to API1
+
+
+No.
+
+An existing request/connection can still fail.
+
+The infrastructure can't generally take:
+
+Request currently executing on API2
+
+
+and magically move its execution state to API1.
+
+🔥 This is the mental model I want you to keep
+                    LOAD BALANCER
+                         |
+              +----------+----------+
+              |                     |
+              ↓                     ↓
+        Health checks          User requests
+              |                     |
+              ↓                     ↓
+        "Is instance           "Process this
+          healthy?"              request"
+              |                     |
+          FAIL?                   FAIL?
+              |                     |
+              ↓                     ↓
+       Remove instance       Return error to user
+       from NEW traffic
+
+
+So:
+
+Health-check failure → instance can be removed from new traffic.
+
+Normal API request failure → normally just return the failure; it does not automatically remove the instance.
+
+Then, if those request failures reflect a genuine instance/dependency problem, your health/readiness check should detect that condition, causing the instance to be removed.
+
+
 That's where **sticky/session affinity** becomes very interesting.
 
 [1]: https://learn.microsoft.com/he-il/azure/app-service/monitor-instances-health-check?utm_source=chatgpt.com "Monitor the Health of App Service Instances - Azure App Service | Microsoft Learn"
@@ -1163,3 +1453,296 @@ That's where **sticky/session affinity** becomes very interesting.
 [3]: https://learn.microsoft.com/en-us/azure/frontdoor/health-probes?utm_source=chatgpt.com "Health Probes - Azure Front Door | Microsoft Learn"
 [4]: https://learn.microsoft.com/en-us/azure/well-architected/service-guides/app-service-web-apps?utm_source=chatgpt.com "Architecture Best Practices for Azure App Service (Web Apps) - Microsoft Azure Well-Architected Framework | Microsoft Learn"
 [5]: https://learn.microsoft.com/en-us/azure/frontdoor/best-practices?utm_source=chatgpt.com "Best Practices - Azure Front Door | Microsoft Learn"
+
+
+-----
+
+
+😂 Bro, absolutely. And first: you don't have a dumb brain. Load balancing has a lot of small concepts that sound similar, so I'll explain it slowly, visually, and with real examples.
+
+No jumping ahead. We'll build it piece by piece.
+
+4. Load-Balancing Algorithms
+
+We currently have:
+
+                    Load Balancer
+                         |
+             +-----------+-----------+
+             |           |           |
+             ↓           ↓           ↓
+           API 1       API 2       API 3
+             🟢          🟢          🟢
+
+
+All 3 APIs are healthy.
+
+Now a request comes:
+
+GET /api/employees
+
+
+The load balancer has to answer one question:
+
+"Which API should I send this request to?"
+
+That's what a load-balancing algorithm decides.
+
+Think of the algorithm as the rule used by the load balancer to choose a server.
+
+4.1 Round Robin
+
+Let's start with the easiest one.
+
+Imagine you have 3 friends:
+
+API1
+API2
+API3
+
+
+And requests arrive one after another:
+
+Request 1
+Request 2
+Request 3
+Request 4
+Request 5
+Request 6
+
+
+Round Robin simply says:
+
+"Take turns."
+
+So:
+
+Request 1 → API1
+Request 2 → API2
+Request 3 → API3
+
+Request 4 → API1
+Request 5 → API2
+Request 6 → API3
+
+
+That's literally the basic idea.
+
+Visual
+                    Load Balancer
+                         |
+                         |
+       R1 ──────────────→ API1
+       R2 ──────────────→ API2
+       R3 ──────────────→ API3
+       R4 ──────────────→ API1
+       R5 ──────────────→ API2
+       R6 ──────────────→ API3
+
+
+So the pattern is:
+
+1 → 2 → 3 → 1 → 2 → 3 → 1 → 2 → 3
+
+
+Very simple.
+
+Why is it called "Round Robin"?
+
+Imagine 3 people standing in a circle:
+
+       API1
+      /    \
+     /      \
+  API3 ---- API2
+
+
+You give the first task to API1.
+
+Then API2.
+
+Then API3.
+
+Then go back around:
+
+API1 → API2 → API3 → API1 → API2 → API3
+
+
+Hence:
+
+Round Robin = take turns.
+
+Now let's use a real example
+
+Suppose Angular sends 6 requests:
+
+Angular
+   |
+   | R1
+   | R2
+   | R3
+   | R4
+   | R5
+   | R6
+   ↓
+Load Balancer
+
+
+The load balancer does:
+
+R1 → API1
+R2 → API2
+R3 → API3
+R4 → API1
+R5 → API2
+R6 → API3
+
+
+So roughly:
+
+API1 → 2 requests
+API2 → 2 requests
+API3 → 2 requests
+
+
+Seems great, right?
+
+Usually yes, if the servers are similar and requests have similar workloads.
+
+But here's where it gets interesting.
+
+🚨 Problem with Round Robin
+
+Imagine this:
+
+API1 → powerful server 💪
+API2 → medium server
+API3 → weak server 🥲
+
+
+Round Robin doesn't necessarily care.
+
+It may still do:
+
+R1 → API1
+R2 → API2
+R3 → API3
+R4 → API1
+R5 → API2
+R6 → API3
+
+
+Each gets roughly the same number of requests.
+
+But that doesn't necessarily mean the same amount of work.
+
+Another problem: requests can take different amounts of time
+
+Imagine:
+
+Request 1 → takes 10 seconds
+Request 2 → takes 100 ms
+Request 3 → takes 100 ms
+
+
+Round Robin might send:
+
+API1 ← Request 1 🔥 (10 sec)
+API2 ← Request 2 😎
+API3 ← Request 3 😎
+
+
+Then more requests arrive:
+
+R4 → API1
+R5 → API2
+R6 → API3
+
+
+API1 might still be processing the huge request:
+
+API1 🔥🔥🔥
+   |
+   └── R1 still running
+
+
+but Round Robin doesn't necessarily say:
+
+"Hmm, API1 is currently busy, let's give R4 to API2."
+
+That's the weakness.
+
+This leads us to the next algorithm
+Least Connections
+
+Instead of asking:
+
+"Whose turn is it?"
+
+we ask:
+
+"Which server currently has the fewest active connections?"
+
+For example:
+
+API1 → 10 active connections
+API2 → 3 active connections
+API3 → 7 active connections
+
+
+New request arrives:
+
+                New Request
+                     |
+                     ↓
+              Load Balancer
+                     |
+          Which has least?
+                     |
+              API2 = 3 ✅
+                     |
+                     ↓
+                   API2
+
+
+So:
+
+Round Robin:
+"Whose turn is it?"
+
+Least Connections:
+"Who is currently least busy?"
+
+
+🔥 That difference is the important part.
+
+Don't worry about memorizing yet
+
+Just remember this:
+
+Round Robin
+Take turns.
+
+API1 → API2 → API3 → API1 → API2 → API3
+
+Least Connections
+Look at current connections.
+
+API1 = 10
+API2 = 3   ← choose this
+API3 = 7
+
+One tiny interview question for you
+
+Suppose we have:
+
+API1 → 5 active connections
+API2 → 2 active connections
+API3 → 8 active connections
+
+
+A new request arrives.
+
+If we're using Least Connections, which API gets the request?
+
+Just answer API1, API2, or API3. 😎
