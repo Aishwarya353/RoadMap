@@ -1746,3 +1746,2285 @@ A new request arrives.
 If we're using Least Connections, which API gets the request?
 
 Just answer API1, API2, or API3. 😎
+
+-----
+
+Absolutely bro 😎. Let's go **deep on Least Connections**, but keep it practical for our **ASP.NET Core + Azure** architecture.
+
+ # Least Connections
+
+ We already know Round Robin:
+
+```
+Request 1 → API1
+Request 2 → API2
+Request 3 → API3
+Request 4 → API1
+```
+
+ It basically asks:
+
+ > **"Whose turn is it?"**
+
+ Least Connections asks a different question:
+
+ > **"Which server currently has the fewest active connections?"**
+
+---
+
+ ## 1\. Basic idea
+
+ Suppose we have:
+
+```
+                 Load Balancer
+                /      |      \
+               ↓       ↓       ↓
+             API1    API2    API3
+```
+
+ Current connections:
+
+```
+API1 → 10 connections
+API2 →  3 connections
+API3 →  7 connections
+```
+
+ A new request arrives:
+
+```
+             New Request
+                  |
+                  ↓
+           Load Balancer
+                  |
+        Check active connections
+                  |
+       +----------+----------+
+       |          |          |
+      10          3          7
+      API1       API2       API3
+                  ↑
+                least
+```
+
+ So:
+
+```
+New Request → API2
+```
+
+ Because:
+
+```
+3 < 7 < 10
+```
+
+ That's the entire basic concept.
+
+---
+
+ # 2\. Let's see it step by step
+
+ Initially:
+
+```
+API1 → 2 connections
+API2 → 5 connections
+API3 → 3 connections
+```
+
+ New request arrives.
+
+ Least:
+
+```
+API1 = 2 ← lowest
+```
+
+ Therefore:
+
+```
+Request → API1
+```
+
+ Now connections become:
+
+```
+API1 → 3
+API2 → 5
+API3 → 3
+```
+
+ Another request arrives.
+
+ Now:
+
+```
+API1 → 3
+API2 → 5
+API3 → 3
+```
+
+ There is a tie between API1 and API3.
+
+ The actual tie-breaking behavior depends on the implementation.
+
+ Conceptually, the load balancer chooses one of the least-loaded candidates.
+
+ For example:
+
+```
+Request → API3
+```
+
+ Now:
+
+```
+API1 → 3
+API2 → 5
+API3 → 4
+```
+
+ Next request:
+
+```
+API1 → 3 ← lowest
+```
+
+ So:
+
+```
+Request → API1
+```
+
+---
+
+ # 3\. Why is this better than Round Robin sometimes?
+
+ This is where it becomes interesting.
+
+ Imagine:
+
+```
+API1 → 1 active request
+API2 → 8 active requests
+API3 → 2 active requests
+```
+
+ Round Robin doesn't necessarily care.
+
+ It might say:
+
+```
+Next turn → API2
+```
+
+ So:
+
+```
+API2 🔥🔥🔥🔥🔥🔥🔥🔥
+```
+
+ Least Connections says:
+
+```
+API1 = 1
+API2 = 8
+API3 = 2
+
+Choose API1
+```
+
+ That's useful when requests have **different processing times**.
+
+---
+
+ # 4\. Real-world ASP.NET Core example
+
+ Suppose Angular is calling:
+
+```
+GET /api/reports/monthly
+```
+
+ This request is expensive.
+
+ It takes:
+
+```
+10 seconds
+```
+
+ Meanwhile:
+
+```
+GET /api/employees
+```
+
+ takes:
+
+```
+50 ms
+```
+
+ Imagine:
+
+```
+API1
+ └── /api/reports/monthly
+      running for 10 sec 🔥
+
+API2
+ └── idle 😎
+
+API3
+ └── idle 😎
+```
+
+ If another request arrives, Least Connections can favor the less-connected instances rather than simply following a fixed rotation.
+
+ This can help distribute **concurrent workload** more effectively.
+
+---
+
+ # 5\. Important: Connection ≠ request
+
+ 🔥 **This is a very important distinction.**
+
+ People often say:
+
+ > "Least Connections sends the request to the server with the fewest requests."
+
+ That's not necessarily accurate.
+
+ It's generally about **active connections**, depending on the load-balancing implementation and protocol.
+
+ For example:
+
+```
+API1 → 10 active connections
+API2 → 2 active connections
+API3 → 7 active connections
+```
+
+ The algorithm sees roughly:
+
+```
+API1 = 10
+API2 = 2 ← choose
+API3 = 7
+```
+
+ It isn't simply maintaining:
+
+```
+API1 processed 100 requests
+API2 processed 80 requests
+API3 processed 120 requests
+```
+
+ Those are historical request counts, which are a different thing.
+
+---
+
+ # 6\. What is an "active connection"?
+
+ At a simplified level, think:
+
+```
+Client
+   |
+   | connection
+   ↓
+API1
+```
+
+ If the connection remains active, it contributes to the connection count.
+
+ For example:
+
+```
+API1
+
+Client A ───────┐
+Client B ───────┤
+Client C ───────┤
+Client D ───────┘
+
+4 active connections
+```
+
+ So:
+
+```
+API1 = 4
+```
+
+ Another server:
+
+```
+API2
+
+Client E ───────┐
+Client F ───────┘
+
+2 active connections
+```
+
+ Therefore:
+
+```
+New connection → API2
+```
+
+---
+
+ # 7\. Why connection duration matters
+
+ Imagine two APIs:
+
+```
+API1 → requests finish very quickly
+API2 → requests take a long time
+```
+
+ Suppose:
+
+```
+API1 → 2 active connections
+API2 → 5 active connections
+```
+
+ Least Connections will tend to favor API1.
+
+ As API2's long-running requests finish:
+
+```
+API2
+5
+↓
+4
+↓
+3
+↓
+2
+```
+
+ Its connection count changes dynamically.
+
+ That's why Least Connections can adapt to changing workload.
+
+ Round Robin doesn't have that information.
+
+---
+
+ # 8\. Let's compare them directly
+
+ Suppose:
+
+```
+API1 → 2 active connections
+API2 → 10 active connections
+API3 → 5 active connections
+```
+
+ ### Round Robin
+
+ It might simply follow:
+
+```
+API1 → API2 → API3 → API1 → ...
+```
+
+ It doesn't inherently choose based on current connection count.
+
+ ### Least Connections
+
+ It looks at:
+
+```
+API1 = 2
+API2 = 10
+API3 = 5
+```
+
+ and chooses:
+
+```
+API1
+```
+
+ So the mental difference is:
+
+```
+Round Robin
+      ↓
+Fixed turn-taking
+
+Least Connections
+      ↓
+Current connection count
+```
+
+---
+
+ # 9\. But Least Connections is NOT magic
+
+ This is another important interview point.
+
+ Suppose:
+
+```
+API1 → 2 connections
+API2 → 2 connections
+API3 → 2 connections
+```
+
+ All equal.
+
+ Least Connections doesn't magically know:
+
+```
+API1 CPU = 20%
+API2 CPU = 90%
+API3 CPU = 30%
+```
+
+ unless the specific load-balancing mechanism has additional load information.
+
+ It is primarily using its defined connection-based metric.
+
+ So:
+
+```
+2 connections ≠ automatically "least CPU"
+```
+
+ For example:
+
+```
+API1
+2 connections
+but each is doing huge work 🔥
+
+API2
+5 connections
+but each is tiny 😎
+```
+
+ A pure connection-count algorithm might still prefer API1.
+
+---
+
+ # 10\. What if one server is more powerful?
+
+ Suppose:
+
+```
+API1 → 8 CPU cores
+API2 → 4 CPU cores
+API3 → 2 CPU cores
+```
+
+ But the load balancer sees:
+
+```
+API1 → 5 connections
+API2 → 5 connections
+API3 → 5 connections
+```
+
+ Pure Least Connections sees:
+
+```
+5 = 5 = 5
+```
+
+ It doesn't automatically understand that API1 is twice as powerful as API3.
+
+ That's why production load balancing can involve things like:
+
+ - weights
+- health status
+- connection counts
+- latency
+- capacity
+- routing policies
+
+ depending on the technology.
+
+---
+
+ # 11\. What happens when an instance becomes unhealthy?
+
+ This connects to what we already learned.
+
+ Suppose:
+
+```
+API1 🟢 → 2 connections
+API2 🟢 → 5 connections
+API3 🔴 → 1 connection
+```
+
+ Someone might say:
+
+ > "API3 has the fewest connections, so send traffic there!"
+
+ No.
+
+ Health status comes first.
+
+ Conceptually:
+
+```
+             Load Balancer
+                  |
+          Is instance healthy?
+                  |
+        +---------+---------+
+        |         |         |
+       API1      API2      API3
+        🟢        🟢        🔴
+        |         |
+        +---------+
+              |
+        Least Connections
+              |
+       API1 vs API2
+```
+
+ So:
+
+```
+API3 = unhealthy
+       ↓
+excluded from eligible pool
+       ↓
+Least Connections chooses among
+healthy instances
+```
+
+ This is a very important mental model:
+
+ > **The algorithm chooses among eligible/healthy backends; an unhealthy backend isn't normally a candidate simply because it has fewer connections.**
+
+---
+
+ # 12\. What happens when API2 crashes?
+
+ Suppose:
+
+```
+API1 🟢
+API2 🔴
+API3 🟢
+```
+
+ Health check detects:
+
+```
+API2 → /health → failure
+```
+
+ Then:
+
+```
+API2
+ ↓
+unhealthy
+ ↓
+removed from eligible traffic
+```
+
+ Now Least Connections operates on:
+
+```
+API1
+API3
+```
+
+ For example:
+
+```
+API1 → 8 connections
+API3 → 3 connections
+```
+
+ New request:
+
+```
+             New Request
+                  ↓
+           Load Balancer
+                  ↓
+       API1 = 8    API3 = 3
+                         ↑
+                       choose
+```
+
+ So:
+
+```
+New Request → API3
+```
+
+---
+
+ # 13\. What about a new instance?
+
+ This becomes very important with **horizontal scaling**.
+
+ Suppose we have:
+
+```
+API1 → 10 connections
+API2 → 8 connections
+API3 → 7 connections
+```
+
+ Azure scales out:
+
+```
+API4 🟡 Starting
+```
+
+ While API4 is starting:
+
+```
+API4 → not ready
+```
+
+ It shouldn't immediately receive normal traffic.
+
+ After:
+
+```
+API4
+ ↓
+startup
+ ↓
+health/readiness check
+ ↓
+healthy
+```
+
+ it becomes eligible.
+
+ Then:
+
+```
+API1 → 10
+API2 → 8
+API3 → 7
+API4 → 0
+```
+
+ If Least Connections is being used, API4 may receive new connections because:
+
+```
+0 < 7 < 8 < 10
+```
+
+ That's actually one reason health/readiness and load balancing work together so nicely.
+
+---
+
+ # 14\. Now let's hit an important limitation
+
+ Imagine:
+
+```
+API1 → 2 connections
+API2 → 10 connections
+```
+
+ But API1's two connections are:
+
+```
+2 huge 30-minute operations 🔥🔥
+```
+
+ and API2's ten connections are:
+
+```
+10 tiny operations 😎
+```
+
+ Least Connections sees:
+
+```
+API1 = 2
+API2 = 10
+```
+
+ and may choose API1.
+
+ So:
+
+ > **Least Connections is better than simple Round Robin for some workloads, but it is still only a proxy for "load."**
+
+ That's an excellent interview insight.
+
+---
+
+ # 15\. Now let's connect this to HTTP/1.1 and HTTP/2
+
+ This gets slightly more advanced, but it's worth understanding.
+
+ With modern HTTP, one network connection can potentially carry multiple requests.
+
+ For example, HTTP/2 supports multiplexing:
+
+```
+Client
+  |
+  | one connection
+  |
+  +---- Request A
+  +---- Request B
+  +---- Request C
+  +---- Request D
+  |
+ API
+```
+
+ So:
+
+```
+1 connection
+≠
+1 request
+```
+
+ This is why you should be careful when casually saying:
+
+ > "Least Connections means the server with the fewest requests."
+
+ It doesn't.
+
+ The exact behavior depends on the layer and implementation.
+
+---
+
+ # 16\. The big mental model
+
+ I want you to remember this picture:
+
+```
+                    New Request
+                         |
+                         ↓
+                  Load Balancer
+                         |
+                Remove unhealthy
+                   instances
+                         |
+                         ↓
+             +-----------+-----------+
+             |           |           |
+            API1        API2        API3
+             🟢          🟢          🟢
+             |           |           |
+             8           3           6
+          connections
+             |
+             +-----------+
+                         |
+                         ↓
+                 Choose lowest
+                         |
+                         ↓
+                       API2
+```
+
+ So the process is roughly:
+
+```
+Request arrives
+      ↓
+Which backends are healthy?
+      ↓
+Remove unhealthy ones
+      ↓
+Look at connection count
+      ↓
+Choose least-connected backend
+      ↓
+Forward traffic
+```
+
+---
+
+ # 17\. Interview answer
+
+ If they ask:
+
+ ### "What is Least Connections?"
+
+ You can say:
+
+ > **"Least Connections is a load-balancing strategy that directs a new connection toward the eligible backend with the fewest active connections. It's useful when requests or connections have varying durations because it can adapt to the current distribution of concurrent connections, unlike basic Round Robin."**
+
+ That's a strong answer.
+
+ If they ask:
+
+ ### "Is Least Connections always better than Round Robin?"
+
+ Say:
+
+ > **"No. It depends on the workload and implementation. Round Robin is simple and works well when instances have similar capacity and request durations. Least Connections can be more suitable when connection durations vary significantly, but connection count is still only an approximation of actual server load."**
+
+ 🔥 That's the level I'd want you to reach for interviews.
+
+---
+
+ ## One last scenario before we move on
+
+ Suppose:
+
+```
+API1 → 2 connections
+API2 → 5 connections
+API3 → 8 connections
+```
+
+ A new request arrives.
+
+ **Least Connections chooses API1.**
+
+ But immediately after that:
+
+```
+API1 → 3
+API2 → 5
+API3 → 8
+```
+
+ Then another request arrives.
+
+ **Which API would Least Connections prefer now?**
+
+ And here's the slightly harder part:
+
+ > If API1's 3 connections are extremely expensive database/reporting operations, while API2's 5 connections are tiny requests, is Least Connections guaranteed to choose the truly "least busy" server?
+
+ Answer those two, and then we'll move to **IP Hash**.
+
+
+ --------
+
+ Exactly bro 🔥 — **API1 is still the preferred one** in that simplified example because:
+
+```
+API1 = 3 connections
+API2 = 5 connections
+API3 = 8 connections
+
+3 < 5 < 8
+```
+
+ And your second point is also important:
+
+ > **No, Least Connections is NOT guaranteed to choose the server that is actually doing the least work.**
+
+ It only knows the metric it's designed to use: **connection count**.
+
+ Now let's clear up your HTTP/1.1, HTTP/2, multiplexing, and HTTPS confusion before moving to IP Hash.
+
+ # 1\. First: HTTP vs HTTPS
+
+ This is actually very simple.
+
+ **HTTP** and **HTTPS** are not competing versions.
+
+ Think:
+
+```
+HTTP = application protocol
+HTTPS = HTTP + TLS encryption
+```
+
+ So these are possible:
+
+```
+HTTP/1.1
+HTTPS using HTTP/1.1
+
+HTTP/2
+HTTPS using HTTP/2
+
+HTTP/3
+HTTPS using HTTP/3
+```
+
+ The `S` in HTTPS basically means the HTTP communication is protected by **TLS**.
+
+ So when I said:
+
+```
+HTTP/1.1
+HTTP/2
+```
+
+ I was talking about **versions of HTTP**, not saying you should use unencrypted HTTP.
+
+ In your enterprise Angular + Azure application, you'll normally see:
+
+```
+Angular
+   |
+   | HTTPS
+   ↓
+Azure
+   |
+   | HTTPS
+   ↓
+ASP.NET Core
+```
+
+ The underlying HTTP version could be HTTP/1.1 or HTTP/2 depending on the connection and configuration.
+
+---
+
+ # 2\. What is HTTP/1.1?
+
+ Let's start from the old/simple model.
+
+ Imagine Angular needs to make requests:
+
+```
+GET /api/employees
+GET /api/departments
+GET /api/orders
+```
+
+ Conceptually, with a connection:
+
+```
+Client
+  |
+  | Request 1
+  ↓
+Server
+  |
+  | Response 1
+  ↓
+Client
+  |
+  | Request 2
+  ↓
+Server
+  |
+  | Response 2
+```
+
+ A connection can be reused with HTTP/1.1, so it's **not correct** to think "every request always creates a brand-new TCP connection."
+
+ But HTTP/1.1 has an important limitation compared with HTTP/2:
+
+ ### HTTP/1.1 does not multiplex multiple HTTP requests concurrently over the same connection in the same way HTTP/2 does.
+
+ You can use multiple connections:
+
+```
+Client
+  |
+  +---- Connection 1 ----> Server
+  |
+  +---- Connection 2 ----> Server
+  |
+  +---- Connection 3 ----> Server
+```
+
+ Browsers commonly use multiple connections to improve parallelism.
+
+---
+
+ # 3\. Then HTTP/2 comes along
+
+ HTTP/2 introduced **multiplexing**.
+
+ This is the important word.
+
+ ## Multiplexing = multiple requests/responses can share one connection concurrently.
+
+ Imagine one highway.
+
+ ### Without multiplexing
+
+ You have:
+
+```
+Connection
+    |
+    +---- Request A
+    |
+    +---- Response A
+    |
+    +---- Request B
+    |
+    +---- Response B
+```
+
+ ### With HTTP/2 multiplexing
+
+ You can have:
+
+```
+                 ONE connection
+                       |
+        +--------------+--------------+
+        |              |              |
+     Request A      Request B      Request C
+        |              |              |
+     Response A     Response B     Response C
+```
+
+ All of them travel through the **same underlying connection**.
+
+ That's multiplexing.
+
+---
+
+ # 4\. Real-world analogy
+
+ Imagine a road.
+
+ ### HTTP/1.1-ish mental model
+
+```
+ONE LANE
+
+🚗 Request A
+🚗 Response A
+🚗 Request B
+🚗 Response B
+🚗 Request C
+🚗 Response C
+```
+
+ ### HTTP/2
+
+```
+MULTIPLE LANES INSIDE ONE HIGHWAY CONNECTION
+
+🚗 Request A ────────┐
+🚙 Request B ────────┼── ONE connection
+🚕 Request C ────────┤
+🚌 Request D ────────┘
+```
+
+ They're logically separate streams but share the underlying connection.
+
+---
+
+ # 5\. Why does this matter for Least Connections?
+
+ 🔥 **This is the important connection to our previous discussion.**
+
+ Suppose:
+
+```
+API1 → 1 connection
+API2 → 5 connections
+```
+
+ With HTTP/2, that single connection to API1 could potentially be carrying:
+
+```
+API1
+ |
+ +-- Request A
+ +-- Request B
+ +-- Request C
+ +-- Request D
+ +-- Request E
+```
+
+ So:
+
+```
+API1 = 1 connection
+```
+
+ does **not necessarily mean**:
+
+```
+API1 = 1 request
+```
+
+ It could be:
+
+```
+API1 = 1 connection
+      ↓
+      20 concurrent streams
+```
+
+ That's why I told you:
+
+ > Don't interpret "Least Connections" as "fewest requests."
+
+ Connection count and application workload are different things.
+
+---
+
+ # 6\. What is a stream?
+
+ HTTP/2 gives you the concept of a **stream**.
+
+ Very simplified:
+
+```
+TCP connection
+       |
+       +---- Stream 1 → GET /employees
+       |
+       +---- Stream 2 → GET /orders
+       |
+       +---- Stream 3 → GET /products
+```
+
+ Each HTTP request/response exchange can be associated with a stream.
+
+ So:
+
+```
+1 TCP connection
+       ↓
+multiple HTTP/2 streams
+```
+
+ That's multiplexing.
+
+---
+
+ # 7\. Where does HTTPS fit?
+
+ Here's the full picture.
+
+ For a normal secure web application:
+
+```
+Angular
+   |
+   | HTTPS
+   |
+   | HTTP/2
+   ↓
+Azure
+```
+
+ You can think of the layers approximately like:
+
+```
+HTTP/2
+  ↓
+TLS
+  ↓
+TCP
+  ↓
+IP
+```
+
+ The TLS layer encrypts the HTTP communication.
+
+ So:
+
+```
+HTTPS + HTTP/2
+```
+
+ is completely normal.
+
+ In fact, when you browse a modern website, you're very commonly using secure HTTP over TLS.
+
+---
+
+ # 8\. One terminology correction
+
+ It's better to say:
+
+ > **HTTP/2 over TLS**
+
+ rather than thinking:
+
+ > "HTTP/2 versus HTTPS."
+
+ Because they answer different questions.
+
+```
+HTTP/1.1 / HTTP/2 / HTTP/3
+          ↓
+      HTTP version
+
+HTTP vs HTTPS
+     ↓
+Is the HTTP communication protected with TLS?
+```
+
+ So:
+
+```
+HTTP/1.1 + TLS = HTTPS using HTTP/1.1
+HTTP/2 + TLS   = HTTPS using HTTP/2
+```
+
+---
+
+ # 9\. Now let's return to Load Balancing 🔥
+
+ We currently know:
+
+ ### Round Robin
+
+```
+API1 → API2 → API3 → API1 → API2 → API3
+```
+
+ ### Least Connections
+
+```
+Look at current connections.
+
+API1 = 2
+API2 = 5
+API3 = 8
+
+Choose API1.
+```
+
+ But we discovered an important limitation:
+
+```
+Connections ≠ actual workload
+```
+
+ And now:
+
+ # 10\. IP Hash
+
+ This one is interesting because it changes the question again.
+
+ Round Robin asks:
+
+ > **"Whose turn is it?"**
+
+ Least Connections asks:
+
+ > **"Who has the fewest connections?"**
+
+ IP Hash asks:
+
+ > **"Which backend does this client's IP map to?"**
+
+ Imagine:
+
+```
+User A
+IP = 10.1.1.50
+```
+
+ The load balancer calculates some hash based on the IP:
+
+```
+10.1.1.50
+     ↓
+   HASH
+     ↓
+   API2
+```
+
+ So:
+
+```
+User A → API2
+```
+
+ Then that user sends another request:
+
+```
+User A
+   ↓
+10.1.1.50
+   ↓
+ HASH
+   ↓
+API2
+```
+
+ Again:
+
+```
+User A → API2
+```
+
+ And again:
+
+```
+User A → API2
+```
+
+ So the basic idea is:
+
+```
+              Load Balancer
+                   |
+              Hash client IP
+                   |
+       +-----------+-----------+
+       |           |           |
+      API1        API2        API3
+                   ↑
+              User A maps here
+```
+
+ This can provide a form of **consistent routing** for clients.
+
+---
+
+ # 11\. Why would we want that?
+
+ Suppose your application stores something **locally on API2**:
+
+```
+API2
+ |
+ +-- User session
+ +-- In-memory state
+```
+
+ If User A always goes to API2:
+
+```
+User A
+  |
+  +---- Request 1 → API2
+  |
+  +---- Request 2 → API2
+  |
+  +---- Request 3 → API2
+```
+
+ then API2 can find that local state.
+
+ But now we're entering the world of:
+
+ # **Sticky Sessions / Session Affinity**
+
+ And this is a VERY important topic for your ASP.NET Core architecture.
+
+ Because we need to ask:
+
+ > **Should we actually depend on a user always going to the same API instance?**
+
+ The modern answer is often:
+
+ > **Prefer stateless APIs when possible.**
+
+ Instead of:
+
+```
+API2
+ |
+ └── User session stored in RAM
+```
+
+ we can use shared storage:
+
+```
+             API1
+              |
+             API2
+              |
+             API3
+              |
+              ↓
+            Redis
+              |
+              ↓
+        Shared state
+```
+
+ Then:
+
+```
+User A → API1
+User A → API3
+User A → API2
+```
+
+ and all instances can access the same shared state.
+
+ 🔥 **That is the bridge from IP Hash → Sticky Sessions → Stateless ASP.NET Core → Redis.**
+
+ We'll go there next, but first I want you to be 100% clear on one thing:
+
+```
+HTTP/1.1
+HTTP/2
+HTTPS
+Multiplexing
+```
+
+ ### Your mental model should now be:
+
+```
+                 HTTPS
+                   |
+             HTTP/1.1 or HTTP/2
+                   |
+            -----------------
+            |               |
+        HTTP/1.1          HTTP/2
+                            |
+                      Multiplexing
+                            |
+                 Multiple streams
+                 over one connection
+```
+
+ And therefore:
+
+ > **1 connection does not necessarily mean 1 request.**
+
+ That's why **Least Connections ≠ Least Requests ≠ Least CPU**.
+
+---
+
+ ## Next
+
+ We'll now go **deep into IP Hash** with a concrete example:
+
+```
+User A → API2
+User B → API1
+User C → API3
+
+Then API2 crashes...
+
+Where does User A go?
+Does the hash change?
+What happens to their session?
+Why does this lead to Sticky Sessions?
+And why do modern stateless APIs often avoid depending on it?
+```
+
+ That's the perfect next step. 🚀
+
+
+ -------
+
+ Exactly bro 🔥 — you've got the key limitation right:
+
+ > **Least Connections is based on active connections, not simply the number of requests.**
+
+ And because **1 connection can carry multiple requests** (especially with HTTP/2), connection count is only an approximation of actual workload.
+
+ Now let's tackle your three questions carefully.
+
+ # 1\. Is IP Hash the same as Consistent Hashing?
+
+ **No. They're related ideas, but they are not the same thing.**
+
+ ### IP Hash
+
+ The basic idea is:
+
+```
+Client IP
+   ↓
+Hash function
+   ↓
+Backend selection
+```
+
+ For example:
+
+```
+10.1.1.10 → hash → API1
+10.1.1.20 → hash → API3
+10.1.1.30 → hash → API2
+```
+
+ The goal is basically:
+
+ > **"Clients with the same IP should tend to map to the same backend."**
+
+---
+
+ ### Consistent Hashing
+
+ Consistent hashing is a broader hashing technique designed to make it possible to add/remove nodes while minimizing how much existing data/key-to-node mapping changes.
+
+ Imagine:
+
+```
+              Hash Ring
+
+           API1
+        /         \
+      /             \
+   API3             API2
+      \             /
+        \         /
+```
+
+ Keys are hashed onto the ring:
+
+```
+UserA → hash → position → API2
+UserB → hash → position → API3
+UserC → hash → position → API1
+```
+
+ If you add another server:
+
+```
+API4
+```
+
+ consistent hashing tries to minimize remapping.
+
+ So:
+
+```
+IP Hash
+    ↓
+Hash the client IP to choose backend
+
+Consistent Hashing
+    ↓
+A hashing strategy designed to minimize
+remapping when nodes change
+```
+
+ They can be used together conceptually, but **IP Hash ≠ Consistent Hashing**.
+
+---
+
+ # 2\. And YES bro — client IP can absolutely differ! 😂
+
+ This is actually a **very important issue**.
+
+ You asked:
+
+ > "Client IP can differ right?"
+
+ **Yes.**
+
+ The IP the load balancer sees may not necessarily be the actual user's device IP.
+
+ Let's say:
+
+```
+Your Laptop
+IP: 192.168.1.50
+       |
+       ↓
+Home Router
+       |
+       ↓
+Internet
+       |
+       ↓
+Azure
+```
+
+ Your laptop's private IP:
+
+```
+192.168.1.50
+```
+
+ is not normally what the public internet sees.
+
+ Your router performs **NAT**.
+
+ So the server might see a public IP such as:
+
+```
+203.x.x.x
+```
+
+---
+
+ # 3\. Even more interesting: corporate networks
+
+ Imagine 500 employees:
+
+```
+Employee 1 ──┐
+Employee 2 ──┤
+Employee 3 ──┤
+Employee 4 ──┤
+              ↓
+        Corporate NAT
+              ↓
+        Public IP
+              ↓
+           Azure
+```
+
+ The load balancer might see:
+
+```
+203.100.50.10
+```
+
+ for many of those users.
+
+ So:
+
+```
+500 users
+    ↓
+same public IP
+    ↓
+same hash input
+```
+
+ Potentially, many clients could map to the same backend.
+
+ That's one limitation of IP-based routing.
+
+---
+
+ # 4\. Mobile users make this even more interesting
+
+ Suppose:
+
+```
+User
+  |
+  | Wi-Fi
+  ↓
+Network A
+  ↓
+Public IP = X
+```
+
+ Then they leave home:
+
+```
+User
+  |
+  | Mobile network
+  ↓
+Network B
+  ↓
+Public IP = Y
+```
+
+ Now:
+
+```
+Before:
+
+Hash(X) → API2
+
+After:
+
+Hash(Y) → API1
+```
+
+ The user's mapped backend can change.
+
+ So IP-based routing is **not a perfect way of identifying a user**.
+
+---
+
+ # 5\. Proxies/CDNs/load balancers
+
+ Your request may pass through several layers:
+
+```
+Browser
+   ↓
+Corporate Proxy
+   ↓
+CDN
+   ↓
+Azure Front Door
+   ↓
+Application Gateway
+   ↓
+ASP.NET Core
+```
+
+ The backend doesn't simply have one obvious "client IP."
+
+ There can be forwarded client-IP information through headers/proxy mechanisms, but you must understand and correctly configure which proxy is trusted before using such information for security or routing.
+
+ So don't think:
+
+ > "The API always directly sees my laptop's IP."
+
+ It often doesn't.
+
+---
+
+ # 6\. Now let's get to Sticky Sessions 🔥
+
+ This is where the previous concepts connect.
+
+ Suppose:
+
+```
+                Load Balancer
+               /      |      \
+              ↓       ↓       ↓
+            API1    API2    API3
+```
+
+ User A logs in.
+
+ The first request goes:
+
+```
+User A
+   ↓
+Load Balancer
+   ↓
+API2
+```
+
+ Suppose API2 stores something in its own memory:
+
+```
+API2 memory
+
+User A
+  |
+  +-- Session
+  +-- Cart
+  +-- Some state
+```
+
+ Then User A sends another request.
+
+ If the load balancer sends it to API1:
+
+```
+User A
+   ↓
+Load Balancer
+   ↓
+API1
+```
+
+ API1 says:
+
+ > "Who is User A? I don't have that session in my memory." 😭
+
+ That's the problem sticky sessions solve.
+
+---
+
+ # 7\. What is Session Affinity?
+
+ **Session Affinity** means:
+
+ > **Try to keep requests from the same client/session going to the same backend instance.**
+
+ So:
+
+```
+User A
+   ↓
+Load Balancer
+   ↓
+API2
+```
+
+ Then subsequent requests:
+
+```
+User A → API2
+User A → API2
+User A → API2
+```
+
+ rather than:
+
+```
+User A → API1
+User A → API3
+User A → API2
+User A → API1
+```
+
+ The system tries to maintain the association:
+
+```
+User A
+   ↕
+API2
+```
+
+---
+
+ # 8\. Sticky Session = Session Affinity?
+
+ In most conversations, **yes, people use these terms almost interchangeably.**
+
+ You can think:
+
+```
+Session Affinity
+       =
+Sticky Sessions
+```
+
+ The idea is:
+
+ > **"Stick this client/session to the same backend."**
+
+---
+
+ # 9\. How does it actually "stick"?
+
+ This is where implementation matters.
+
+ One common mechanism is a **cookie**.
+
+ Imagine the server/load-balancing infrastructure gives the browser something like:
+
+```
+Set-Cookie:
+    Affinity=API2
+```
+
+ Browser stores it:
+
+```
+Browser
+ |
+ +-- Cookie: Affinity=API2
+```
+
+ Next request:
+
+```
+Browser
+   |
+   | Cookie: Affinity=API2
+   ↓
+Load Balancer
+   |
+   ↓
+API2
+```
+
+ So the load balancer can use that affinity information to keep routing the client toward API2.
+
+ The exact cookie name and mechanism depend on the Azure service/configuration.
+
+---
+
+ # 10\. IP Hash vs Sticky Session
+
+ This is an important distinction.
+
+ ### IP Hash
+
+ Uses something like:
+
+```
+Client IP
+   ↓
+Hash
+   ↓
+API2
+```
+
+ ### Sticky Session
+
+ Uses an affinity mechanism, commonly:
+
+```
+Browser
+   ↓
+Affinity cookie
+   ↓
+Load Balancer
+   ↓
+API2
+```
+
+ So:
+
+```
+IP Hash
+    ↓
+Network identity
+
+Sticky Session
+    ↓
+Session/client affinity
+```
+
+ They are **not the same mechanism**.
+
+---
+
+ # 11\. Why would we need sticky sessions?
+
+ Suppose we build a badly designed application:
+
+```
+API1
+ |
+ └── User session stored in RAM
+
+API2
+ |
+ └── User session stored in RAM
+
+API3
+ |
+ └── User session stored in RAM
+```
+
+ Then:
+
+```
+User A → API1
+```
+
+ API1 knows the session.
+
+ Next request:
+
+```
+User A → API3
+```
+
+ API3 doesn't know it.
+
+ So we say:
+
+ > "Let's make User A stick to API1."
+
+ That's session affinity.
+
+---
+
+ # 12\. But here's the BIG enterprise lesson 🚨
+
+ In modern distributed systems, we'd often prefer:
+
+ > **Don't depend on local server memory for important user state.**
+
+ Instead:
+
+```
+                API1
+                  |
+                API2
+                  |
+                API3
+                  |
+                  ↓
+                Redis
+                  |
+             Shared State
+```
+
+ Now:
+
+```
+User A → API1
+User A → API3
+User A → API2
+```
+
+ All instances can access shared state.
+
+ This is much better for horizontal scaling.
+
+---
+
+ # 13\. What about authentication?
+
+ Here's where people sometimes get confused.
+
+ Suppose you're using JWT authentication.
+
+ The token might be:
+
+```
+Authorization: Bearer eyJ...
+```
+
+ The API can validate the token on **any instance**:
+
+```
+User
+ |
+ +----> API1 → validate token ✅
+ |
+ +----> API2 → validate token ✅
+ |
+ +----> API3 → validate token ✅
+```
+
+ You don't necessarily need sticky sessions for that.
+
+ That's one reason **stateless authentication** works nicely with load-balanced APIs.
+
+---
+
+ # 14\. Imagine our Angular application
+
+ Our architecture:
+
+```
+Angular
+   |
+   | HTTPS
+   ↓
+Azure
+   |
+   ↓
+Load Balancer / Routing Layer
+   |
+   +--------+--------+
+   |        |        |
+   ↓        ↓        ↓
+ API1     API2     API3
+   |        |        |
+   +--------+--------+
+            |
+          Redis
+```
+
+ Angular sends:
+
+```
+GET /api/employees
+Authorization: Bearer <token>
+```
+
+ Request 1:
+
+```
+Angular → API1
+```
+
+ Request 2:
+
+```
+Angular → API3
+```
+
+ Request 3:
+
+```
+Angular → API2
+```
+
+ That's perfectly fine **if the API is designed to be stateless**.
+
+---
+
+ # 15\. Why sticky sessions can become a problem
+
+ Suppose:
+
+```
+API1 🟢
+API2 🟢
+API3 🟢
+```
+
+ User A is stuck to API2:
+
+```
+User A → API2
+```
+
+ Now API2 crashes:
+
+```
+API1 🟢
+API2 💀
+API3 🟢
+```
+
+ What happens?
+
+ The affinity relationship pointing to API2 can't magically keep working.
+
+ The infrastructure needs to route the client to another healthy backend, depending on the service's behavior/configuration.
+
+ And any state that existed **only in API2's memory is gone**.
+
+ That's the fundamental weakness:
+
+```
+Sticky session
+      +
+Local memory state
+      ↓
+Instance failure
+      ↓
+State can disappear
+```
+
+---
+
+ # 16\. The architecture we generally want
+
+ Instead of:
+
+```
+User
+  ↓
+API2
+  ↓
+Local RAM
+  ↓
+Session
+```
+
+ we prefer:
+
+```
+User
+  ↓
+Load Balancer
+  ↓
+Any healthy API
+  ↓
+Shared state store
+  ↓
+Redis
+```
+
+ Then:
+
+```
+Request 1 → API1 → Redis
+Request 2 → API3 → Redis
+Request 3 → API2 → Redis
+```
+
+ The user doesn't care which instance receives the request.
+
+ 🔥 That's the beauty of **stateless APIs**.
+
+---
+
+ # 17\. One very important distinction
+
+ Don't confuse:
+
+```
+HTTP connection
+```
+
+ with:
+
+```
+Application session
+```
+
+ They're different.
+
+ A user can have:
+
+```
+Browser
+   |
+   | HTTP connection
+   ↓
+API1
+```
+
+ while their application/session state might live in:
+
+```
+Redis
+```
+
+ And the next request could go:
+
+```
+Browser
+   |
+   ↓
+API3
+```
+
+ The application session can still exist because it isn't tied to API1's RAM.
+
+---
+
+ # 🎯 Interview answer
+
+ If they ask:
+
+ ### "What is session affinity?"
+
+ Say:
+
+ > **"Session affinity, also called sticky sessions, is a load-balancing mechanism that attempts to route requests from the same client or session to the same backend instance. It's useful for applications that maintain session state locally, but it can reduce flexibility during scaling or instance failures. For horizontally scaled APIs, I generally prefer keeping important state in shared storage such as Redis so requests can be handled by any healthy instance."**
+
+ That's a **very solid enterprise answer**.
+
+---
+
+ # 🔥 And now the flow is becoming clear
+
+```
+Least Connections
+       ↓
+"Choose least-connected backend"
+       ↓
+IP Hash
+       ↓
+"Map client identity/IP to backend"
+       ↓
+Sticky Sessions
+       ↓
+"Keep this client/session with a backend"
+       ↓
+Stateless API
+       ↓
+"Don't depend on a particular backend"
+       ↓
+Redis / shared storage
+       ↓
+"Any healthy instance can serve the request"
+```
+
+ And **this is exactly why I wanted you to understand these concepts in this order.**
+
+ ### Next in your original list:
+
+ **#7 — Layer 4 vs Layer 7 Load Balancing**
+
+ That's where we'll finally understand things like:
+
+```
+TCP
+HTTP
+HTTPS
+IP
+Port
+URL
+Host
+Path
+
+Layer 4 → what can it see?
+Layer 7 → what can it see?
+```
+
+ And then we'll map that directly to:
+
+ **Azure Load Balancer vs Application Gateway vs Front Door.** 🔥
