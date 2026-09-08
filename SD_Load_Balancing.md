@@ -4028,3 +4028,899 @@ Layer 7 → what can it see?
  And then we'll map that directly to:
 
  **Azure Load Balancer vs Application Gateway vs Front Door.** 🔥
+
+-----
+# What is Multiplexing?
+Multiplexing in system design is a technique that combines multiple logical signals, data streams, or client requests into a single physical connection, communication channel, or resource pool. It maximizes resource efficiency, reduces connection overhead, and lowers latency across network layers, databases, and microservices.
+
+# What is Session Affinity?
+Session affinity is a load-balancing technique that routes all requests from a specific user or client to the same backend server for the duration of a session. It is also commonly called a sticky session or session persistence.
+
+------
+
+Yesss bro 😎🔥 **next is exactly #7: Layer 4 vs Layer 7 Load Balancing.**
+
+ This is the perfect next step because now you already understand:
+
+ - Round Robin
+- Least Connections
+- IP Hash
+- Health checks
+- Sticky sessions
+- Stateless APIs
+- HTTP/1.1 vs HTTP/2
+- Multiplexing
+
+ Now we answer the bigger question:
+
+ > **What can the Load Balancer actually see inside a network request?**
+
+ ## #7 — Layer 4 vs Layer 7
+
+ Start with this mental model:
+
+```
+                    Load Balancer
+                         |
+              What information can
+                it inspect?
+                         |
+             +-----------+-----------+
+             |                       |
+          Layer 4                 Layer 7
+             |                       |
+        TCP / UDP                HTTP / HTTPS
+```
+
+ ### Layer 4
+
+ Layer 4 mainly deals with **transport-level information**.
+
+ Think:
+
+```
+Source IP
+Destination IP
+Source Port
+Destination Port
+TCP / UDP
+Connection
+```
+
+ So a Layer 4 load balancer can basically think:
+
+ > "I have a TCP connection coming to port 443. Which healthy backend should receive it?"
+
+ It doesn't need to understand your API endpoint.
+
+ For example:
+
+```
+Client
+  |
+  | TCP → 443
+  v
+L4 Load Balancer
+  |
+  +----> API1
+  +----> API2
+  +----> API3
+```
+
+ It doesn't necessarily care whether the request is:
+
+```
+GET /api/employees
+GET /api/orders
+POST /api/payments
+```
+
+---
+
+ ### Layer 7
+
+ Layer 7 understands the **application protocol**, particularly HTTP.
+
+ Now the load balancer can potentially inspect things like:
+
+```
+HTTP method
+Host
+URL/path
+Headers
+Cookies
+Query string
+```
+
+ So it can make decisions like:
+
+```
+/api/employees
+        ↓
+     API pool
+
+/api/orders
+        ↓
+     API pool
+
+/images/*
+        ↓
+     static/content pool
+```
+
+ Or:
+
+```
+api.company.com
+        ↓
+      API
+
+www.company.com
+        ↓
+      Web
+
+admin.company.com
+        ↓
+      Admin
+```
+
+ 🔥 **That's the major difference.**
+
+```
+Layer 4:
+"What connection/transport traffic is this?"
+
+Layer 7:
+"What HTTP request is this?"
+```
+
+---
+
+ ## And HTTPS? 👀
+
+ This is where your previous question comes back.
+
+ Suppose Angular sends:
+
+```
+HTTPS
+  ↓
+GET /api/employees
+```
+
+ The HTTP information is encrypted by TLS.
+
+ So if a Layer 7 component wants to inspect:
+
+```
+/api/employees
+Host
+Cookie
+Headers
+```
+
+ it generally needs access to the decrypted HTTP traffic — commonly by **TLS termination** at that component.
+
+ Conceptually:
+
+```
+Angular
+   |
+   | HTTPS 🔒
+   v
+Layer 7 Gateway
+   |
+   | TLS termination
+   ↓
+HTTP request can be inspected
+   |
+   +---- /api/employees → API pool
+   +---- /api/orders    → API pool
+```
+
+ Don't worry about the exact Azure implementation yet. We'll get there.
+
+---
+
+ ## The BIG example
+
+ Imagine your company has:
+
+```
+api.company.com
+```
+
+ and:
+
+```
+/api/orders
+/api/employees
+/api/reports
+```
+
+ With Layer 7 routing, you can have rules such as:
+
+```
+                 Layer 7 Gateway
+                       |
+          +------------+------------+
+          |                         |
+          ↓                         ↓
+      /api/orders              /api/reports
+          |                         |
+          ↓                         ↓
+   Order API Pool           Reporting API Pool
+```
+
+ The gateway understands:
+
+```
+HTTP request
+     ↓
+URL path
+     ↓
+routing decision
+```
+
+ A Layer 4 load balancer generally can't make that decision because it isn't operating at the HTTP application layer.
+
+---
+
+ ## One sentence to remember 🧠
+
+ > **Layer 4 balances connections; Layer 7 can balance HTTP requests based on application-level information.**
+
+ That's the foundation.
+
+ And **then** we go straight into the Azure trio:
+
+```
+Azure Load Balancer
+        ↓
+Application Gateway
+        ↓
+Azure Front Door
+```
+
+ Because now you'll understand **why Azure has three different things instead of one giant "Load Balancer."** 🔥
+
+ ----
+
+ Bro 😎 — I brought up **Layer 4 vs Layer 7** because it explains **how a load balancer actually makes its routing decision**.
+
+ But you're right to ask **why now**. We don't need to jump into it yet.
+
+ ### Think of what we've learned so far
+
+ We started with:
+
+```
+Users
+  ↓
+Load Balancer
+  ↓
+API1 / API2 / API3
+```
+
+ Then we asked:
+
+ **1\. How does it know which instance is healthy?**
+
+```
+Health Check
+     ↓
+API1 ✅
+API2 ❌
+API3 ✅
+```
+
+ **2\. If multiple instances are healthy, how does it choose?**
+
+```
+Round Robin
+Least Connections
+IP Hash
+```
+
+ **3\. What if the application needs the same user to stay on one instance?**
+
+```
+Session Affinity / Sticky Sessions
+```
+
+ And while discussing Least Connections, we encountered:
+
+```
+HTTP/1.1
+HTTP/2
+Multiplexing
+1 connection ≠ 1 request
+```
+
+ That naturally led to **Layer 4 vs Layer 7**, because now we have to ask:
+
+ > **What exactly can the load balancer see when it is deciding where to send traffic?**
+
+ ### Why that matters
+
+ Imagine this request:
+
+```
+GET https://api.mycompany.com/orders/123
+```
+
+ A **Layer 4** load balancer mainly works with network/transport information such as:
+
+```
+IP
+Port
+TCP/UDP connection
+```
+
+ It doesn't need to understand:
+
+```
+GET
+/orders/123
+api.mycompany.com
+```
+
+ A **Layer 7** load balancer can understand HTTP-level information such as:
+
+```
+Host
+Path
+HTTP method
+Headers
+Cookies
+```
+
+ So Layer 7 can potentially say:
+
+```
+/api/orders/*  → Order API
+/api/users/*   → User API
+/api/payments/* → Payment API
+```
+
+ That's a completely different level of routing.
+
+ ### And THIS becomes important for Azure
+
+ Because later you're going to ask:
+
+```
+Azure Load Balancer
+        vs
+Application Gateway
+        vs
+Front Door
+```
+
+ And one of the major differences is **what layer they operate at and what kind of routing they can perform**.
+
+ So I wasn't introducing Layer 4/7 randomly. It is the **bridge between our basic load-balancing concepts and the actual Azure services**.
+
+ But I'd structure our learning like this:
+
+```
+✅ Load Balancing
+   ↓
+✅ Why we need it
+   ↓
+✅ Health Checks
+   ↓
+✅ Round Robin
+   ↓
+✅ Least Connections
+   ↓
+✅ IP Hash
+   ↓
+✅ Sticky Sessions
+   ↓
+👉 Layer 4 vs Layer 7
+   ↓
+👉 Azure Load Balancer
+   ↓
+👉 Application Gateway
+   ↓
+👉 Front Door
+   ↓
+👉 Angular → Azure → ASP.NET Core
+   ↓
+👉 Instance crash
+   ↓
+👉 Horizontal scaling
+   ↓
+👉 Interview scenarios
+```
+
+ So **yes bro, Layer 4/7 is next**, but now you know _why_ we're learning it rather than just memorizing another Azure term. 😎
+
+ ------------
+
+ Exactly bro — **this is the right question to ask before we move on.** 🔥
+
+ The short answer is:
+
+ > **No, you do NOT have to use both Layer 4 and Layer 7.**
+>
+>  You choose based on **what kind of traffic you have and what routing decisions you need to make.**
+
+ Let's make this very clear.
+
+ ## First: What is the actual difference?
+
+ Think of it like this:
+
+ ### Layer 4 asks:
+
+ > **"Where should I send this network connection?"**
+
+ It mainly works with:
+
+```
+IP
+Port
+TCP / UDP
+Connection
+```
+
+ It does **not** understand your application URL like:
+
+```
+/api/orders
+/api/users
+```
+
+ Azure Load Balancer is a Layer 4 service.  Microsoft Learn+1
+
+---
+
+ ### Layer 7 asks:
+
+ > **"What HTTP request is this, and where should this particular request go?"**
+
+ Now it can understand things such as:
+
+```
+HTTP method
+Host
+URL/path
+Headers
+Cookies
+TLS
+```
+
+ For example:
+
+```
+/api/orders  → Order API
+/api/users   → User API
+/api/products → Product API
+```
+
+ Azure Application Gateway is a Layer 7 service for regional web traffic.  Microsoft Learn+1
+
+---
+
+ # When do I use Layer 4?
+
+ Use **Layer 4** when you don't need to understand the HTTP request itself.
+
+ For example:
+
+```
+Client
+  |
+  | TCP
+  |
+  v
+Layer 4 Load Balancer
+  |
+  +----> Server 1
+  +----> Server 2
+  +----> Server 3
+```
+
+ Good examples:
+
+ - TCP applications
+- UDP applications
+- Non-HTTP workloads
+- Internal networking between infrastructure tiers
+- VM/VM Scale Set workloads where you simply need connection distribution
+
+ Azure specifically positions Standard Load Balancer for TCP/UDP regional load balancing.  Microsoft Learn
+
+ ### Example
+
+ Imagine your application has:
+
+```
+Angular
+   ↓
+ASP.NET Core
+   ↓
+Some TCP-based internal service
+```
+
+ The internal service doesn't need:
+
+```
+/api/orders
+/api/users
+```
+
+ routing.
+
+ You just need:
+
+```
+TCP connection
+      ↓
+Server 1 / Server 2 / Server 3
+```
+
+ Layer 4 is perfectly suitable.
+
+---
+
+ # When do I use Layer 7?
+
+ Use **Layer 7 when you actually care about HTTP-level information.**
+
+ For example:
+
+```
+https://mycompany.com/api/orders
+```
+
+ You want:
+
+```
+/api/orders
+      ↓
+Order backend
+```
+
+ while:
+
+```
+/api/users
+      ↓
+User backend
+```
+
+ That's Layer 7.
+
+ Or:
+
+```
+orders.mycompany.com
+      ↓
+Order service
+
+users.mycompany.com
+      ↓
+User service
+```
+
+ Again, Layer 7.
+
+ Application Gateway supports URL path routing, host-based routing, TLS termination, cookie-based affinity, and WAF integration.  Microsoft Learn+1
+
+---
+
+ # Now your BIG question:
+
+ ## Do I need both?
+
+ ### ❌ No.
+
+ You can absolutely have:
+
+```
+Users
+  ↓
+Layer 7
+  ↓
+ASP.NET Core APIs
+```
+
+ and that's enough.
+
+ Or:
+
+```
+Clients
+  ↓
+Layer 4
+  ↓
+TCP services
+```
+
+ and that's enough.
+
+---
+
+ # But sometimes we use BOTH 🔥
+
+ This is where enterprise architecture gets interesting.
+
+ You can have:
+
+```
+                  Internet
+                     |
+                     ↓
+              Layer 7 Gateway
+                     |
+          +----------+----------+
+          |                     |
+          ↓                     ↓
+       Web/API              Backend
+                               |
+                               ↓
+                         Layer 4 LB
+                               |
+                    +----------+----------+
+                    |          |          |
+                   VM1        VM2        VM3
+```
+
+ Why?
+
+ Because the two layers are doing **different jobs**.
+
+ Layer 7:
+
+```
+"What HTTP request is this?"
+```
+
+ Layer 4:
+
+```
+"Which backend connection should receive this?"
+```
+
+ Microsoft explicitly documents architectures combining Front Door/Application Gateway with Load Balancer when each layer has a different role.  Microsoft Learn+1
+
+---
+
+ # Let's use YOUR Angular + ASP.NET Core application
+
+ Suppose we have:
+
+```
+                 Angular
+                    |
+                    | HTTPS
+                    ↓
+             ??? Load Balancer
+                    |
+          +---------+---------+
+          |         |         |
+         API1      API2      API3
+```
+
+ You might say:
+
+ > "Bro, why would I need Layer 4 here?"
+
+ You **may not**.
+
+ Because this is an HTTP/HTTPS application.
+
+ If you need things like:
+
+```
+/api/orders → Order backend
+/api/users → User backend
+
+HTTPS termination
+WAF
+Cookie affinity
+Host/path routing
+```
+
+ then Layer 7 is useful.
+
+ For a regional Azure architecture, **Application Gateway** is the natural Layer 7 candidate.  Microsoft Learn
+
+---
+
+ # And what about Front Door?
+
+ This adds another dimension:
+
+ ## Geographic scope.
+
+ Think:
+
+```
+Layer 7
+   |
+   +---- Application Gateway
+   |       ↓
+   |    Regional
+   |
+   +---- Front Door
+           ↓
+        Global
+```
+
+ For example:
+
+```
+                    Users
+                 /    |    \
+              India  Europe  USA
+                 \    |    /
+                  ↓   ↓   ↓
+                Front Door
+                🌎 Global
+                    |
+          +---------+---------+
+          |                   |
+       Region A            Region B
+          |                   |
+       App Gateway         App Gateway
+          |                   |
+       API instances       API instances
+```
+
+ Front Door is a **global Layer 7** entry point for HTTP/HTTPS, while Application Gateway provides **regional Layer 7** routing.  Microsoft Learn+1
+
+---
+
+ # So here's the decision tree I want you to remember
+
+```
+                What traffic do I have?
+                       |
+              +--------+--------+
+              |                 |
+           TCP/UDP           HTTP/HTTPS
+              |                 |
+              ↓                 ↓
+         Layer 4            Need HTTP
+                             intelligence?
+                              |
+                       +------+------+
+                       |             |
+                      NO            YES
+                       |             |
+                       ↓             ↓
+                   Layer 4       Layer 7
+```
+
+ And if it's Layer 7:
+
+```
+             HTTP/HTTPS
+                 |
+          Where is my app?
+                 |
+        +--------+--------+
+        |                 |
+      Region            Global
+        |                 |
+        ↓                 ↓
+ Application           Front Door
+   Gateway
+```
+
+ That's simplified, but it's a **great mental model**.
+
+---
+
+ # 🔥 Most important: You don't "choose Layer 4 and Layer 7"
+
+ Don't think:
+
+ > "My application needs Layer 4 AND Layer 7 because that's how load balancing works."
+
+ Instead think:
+
+ > **"What job needs to be performed at each point in my architecture?"**
+
+ For example:
+
+```
+Internet
+   |
+   ↓
+Front Door
+Layer 7
+"Which region?"
+   |
+   ↓
+Application Gateway
+Layer 7
+"Which application/backend?"
+   |
+   ↓
+Load Balancer
+Layer 4
+"Which VM?"
+   |
+   +---- VM1
+   +---- VM2
+   +---- VM3
+```
+
+ You **can** have all three.
+
+ But you don't **have to**.
+
+---
+
+ ## One more thing: don't confuse Layer 4/7 with algorithms
+
+ These are different concepts.
+
+ ### Layer
+
+ Answers:
+
+ > **"What information can the load balancer understand?"**
+
+```
+L4 → network/transport
+L7 → HTTP/application
+```
+
+ ### Algorithm
+
+ Answers:
+
+ > **"How does it choose among eligible backends?"**
+
+```
+Round Robin
+Least Connections
+Hashing
+etc.
+```
+
+ So you could conceptually have:
+
+```
+Layer 7 Load Balancer
+       +
+Routing algorithm
+       +
+Health checks
+       +
+Session affinity
+```
+
+ These are **different dimensions** of the design.
+
+---
+
+ ### For our learning path
+
+ I think we're ready to go:
+
+ **Layer 4 vs Layer 7 → Azure Load Balancer vs Application Gateway vs Front Door**
+
+ And I'll make it very practical using exactly this:
+
+```
+Angular
+   ↓
+Azure
+   ↓
+ASP.NET Core API1/API2/API3
+   ↓
+Azure SQL
+```
+
+ Then you'll understand **why we choose one Azure service over another**, rather than memorizing Azure product names. 😎
+
+  Sources
+
+ 
